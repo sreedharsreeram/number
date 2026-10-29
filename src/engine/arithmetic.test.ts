@@ -25,11 +25,13 @@ describe('arithmetic puzzle engine', () => {
 
   it('generates exact targets at the required digit and card difficulty', () => {
     for (const difficulty of [3, 4, 5] as Difficulty[]) {
-      const puzzle = createPuzzle(difficulty)
-      expect(String(puzzle.target)).toHaveLength(difficulty)
-      expect(solveHand(puzzle.hand.map(card => card.value)).get(puzzle.target)?.minimumCards).toBe(puzzle.minimumCards)
-      expect(new Set(puzzle.hand.map(card => card.code)).size).toBe(puzzle.hand.length)
-      expect(puzzle.solution).toBeTruthy()
+      for (let i = 0; i < 20; i++) {
+        const puzzle = createPuzzle(difficulty)
+        expect(String(puzzle.target)).toHaveLength(difficulty)
+        expect(solveHand(puzzle.hand.map(card => card.value)).get(puzzle.target)?.minimumCards).toBe(puzzle.minimumCards)
+        expect(new Set(puzzle.hand.map(card => card.code)).size).toBe(puzzle.hand.length)
+        expect(puzzle.solution).toBeTruthy()
+      }
     }
   })
 
@@ -43,5 +45,6 @@ describe('arithmetic puzzle engine', () => {
     expect(undo(next).cards).toEqual(puzzle.cards)
     expect(submitAttempt(next).attempts[0].value).toBe(72)
     expect(resetAttempt(next).cards).toEqual(puzzle.cards)
+    expect(combine({ ...puzzle, target: 72 }, 0, 1, '×').puzzle.status).toBe('won')
   })
 })
