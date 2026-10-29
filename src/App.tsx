@@ -20,7 +20,15 @@ function loadPuzzle(): Puzzle {
     const raw = localStorage.getItem(STORAGE_KEY)
     if (raw) {
       const saved = JSON.parse(raw) as Puzzle
-      if ([3, 4, 5].includes(saved.difficulty) && Array.isArray(saved.cards) && typeof saved.target === 'number') return saved
+      if (
+        [3, 4, 5].includes(saved.difficulty) &&
+        Number.isInteger(saved.target) &&
+        Array.isArray(saved.hand) && saved.hand.length >= 5 &&
+        saved.hand.every(card => card && typeof card.rank === 'string' && typeof card.suit === 'string' && Number.isInteger(card.value)) &&
+        Array.isArray(saved.cards) && saved.cards.every(card => card && Number.isInteger(card.value) && Array.isArray(card.used)) &&
+        Array.isArray(saved.moves) && Array.isArray(saved.attempts) &&
+        ['playing', 'won', 'lost'].includes(saved.status)
+      ) return saved
     }
   } catch { /* A fresh puzzle works without browser storage. */ }
   return createPuzzle(3)
