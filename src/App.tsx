@@ -1,122 +1,156 @@
-import { useState } from 'react'
-import heroImg from './assets/hero.png'
-import reactLogo from './assets/react.svg'
-import viteLogo from './assets/vite.svg'
+import { useEffect, useMemo, useState, type FormEvent } from 'react'
+import { motion } from 'motion/react'
+import { ArrowLeft, ArrowRight, BarChart2, Check, CircleHelp, Lightbulb, LockKeyhole, RotateCcw, Shuffle, UserRound } from 'lucide-react'
+import { Button } from '@/components/ui/button'
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
+import { Toaster } from '@/components/ui/sonner'
+import { toast } from 'sonner'
+import { combine, createPuzzle, resetAttempt, submitAttempt, undo, type Difficulty, type Operator, type Puzzle } from '@/engine/arithmetic'
+import { accountFromUser, loadResults, saveResult, supabase, type Account, type PracticeResult } from '@/lib/supabase'
 import './App.css'
 
+const STORAGE_KEY = 'deckle-arithmetic-v2'
+
+function loadPuzzle(): Puzzle {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY)
+    if (raw) {
+      const saved = JSON.parse(raw) as Puzzle
+      if ([3, 4, 5].includes(saved.difficulty) && Array.isArray(saved.cards) && typeof saved.target === 'number') return saved
+    }
+  } catch { /* A fresh puzzle works without browser storage. */ }
+  return createPuzzle(3)
+}
+
+function AuthDialog({ open, onOpenChange, onAuthed }: { open: boolean; onOpenChange: (value: boolean) => void; onAuthed: (account: Account) => void }) {
+  const [mode, setMode] = useState<'register' | 'login'>('register')
+  const [name, setName] = useState('')
+  const [email, setEmail] = useState('')
+  const [password, setPassword] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [message, setMessage] = useState('')
+
+  async function submit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    if (!supabase) return
+    setBusy(true)
+    setMessage('')
+    try {
+      if (mode === 'register') {
+        const { data, error } = await supabase.auth.signUp({ email, password, options: { data: { name: name.trim() } } })
+        if (error) throw error
+        const account = accountFromUser(data.session?.user ?? null)
+        if (account) { onAuthed(account); onOpenChange(false); toast.success('Account created.') }
+        else { setMode('login'); setMessage('Check your email to confirm your account, then sign in.') }
+      } else {
+        const { data, error } = await supabase.auth.signInWithPassword({ email, password })
+        if (error) throw error
+        const account = accountFromUser(data.user)
+        if (account) onAuthed(account)
+        onOpenChange(false)
+        toast.success('Signed in.')
+      }
+    } catch (error) { setMessage(error instanceof Error ? error.message : 'Could not sign in.') }
+    finally { setBusy(false) }
+  }
+
+  return <Dialog open={open} onOpenChange={onOpenChange}><DialogContent className="dialog-shell sm:max-w-[390px]"><DialogHeader><DialogTitle>{mode === 'register' ? 'Create an account' : 'Sign in'}</DialogTitle><DialogDescription>Save your practice and pick up where you left off.</DialogDescription></DialogHeader>{!supabase ? <p className="dialog-message">Accounts need a Supabase project. Guest practice is ready now.</p> : <form className="auth-form" onSubmit={submit}>{mode === 'register' && <div><Label htmlFor="name">Name</Label><Input id="name" value={name} onChange={event => setName(event.target.value)} minLength={2} maxLength={40} autoComplete="name" required /></div>}<div><Label htmlFor="email">Email</Label><Input id="email" type="email" value={email} onChange={event => setEmail(event.target.value)} autoComplete="email" required /></div><div><Label htmlFor="password">Password</Label><Input id="password" type="password" value={password} onChange={event => setPassword(event.target.value)} minLength={6} autoComplete={mode === 'register' ? 'new-password' : 'current-password'} required /></div>{message && <p className="dialog-message" role="alert">{message}</p>}<Button type="submit" disabled={busy} className="dark-button">{busy ? 'One moment…' : mode === 'register' ? 'Create account' : 'Sign in'} <ArrowRight size={15} /></Button><button type="button" className="switch-link" onClick={() => { setMode(mode === 'register' ? 'login' : 'register'); setMessage('') }}>{mode === 'register' ? 'Already have an account? Sign in' : 'New here? Create an account'}</button></form>}</DialogContent></Dialog>
+}
+
 function App() {
-  const [count, setCount] = useState(0)
+  const [puzzle, setPuzzle] = useState<Puzzle>(loadPuzzle)
+  const [selected, setSelected] = useState<number[]>([])
+  const [quantOpen, setQuantOpen] = useState(false)
+  const [solutionOpen, setSolutionOpen] = useState(false)
+  const [authOpen, setAuthOpen] = useState(false)
+  const [helpOpen, setHelpOpen] = useState(false)
+  const [statsOpen, setStatsOpen] = useState(false)
+  const [account, setAccount] = useState<Account | null>(null)
+  const [results, setResults] = useState<PracticeResult[]>([])
+  const bestCard = useMemo(() => [...puzzle.cards].sort((a, b) => Math.abs(a.value - puzzle.target) - Math.abs(b.value - puzzle.target))[0], [puzzle.cards, puzzle.target])
+  const triesUsed = puzzle.attempts.length + (puzzle.status === 'won' ? 1 : 0)
+  const wins = results.filter(result => result.won).length
 
-  return (
-    <>
-      <section id="center">
-        <div className="hero">
-          <img src={heroImg} className="base" width="170" height="179" alt="" />
-          <img src={reactLogo} className="framework" alt="React logo" />
-          <img src={viteLogo} className="vite" alt="Vite logo" />
-        </div>
-        <div>
-          <h1>Get started</h1>
-          <p>
-            Edit <code>src/App.tsx</code> and save to test <code>HMR</code>
-          </p>
-        </div>
-        <button
-          type="button"
-          className="counter"
-          onClick={() => setCount((count) => count + 1)}
-        >
-          Count is {count}
-        </button>
-      </section>
+  useEffect(() => { try { localStorage.setItem(STORAGE_KEY, JSON.stringify(puzzle)) } catch { /* Guest practice remains playable. */ } }, [puzzle])
+  useEffect(() => {
+    if (!supabase) return
+    supabase.auth.getUser().then(({ data }) => setAccount(accountFromUser(data.user)))
+    const { data: listener } = supabase.auth.onAuthStateChange((_event, session) => {
+      setAccount(accountFromUser(session?.user ?? null))
+      if (!session) setResults([])
+    })
+    return () => listener.subscription.unsubscribe()
+  }, [])
+  useEffect(() => {
+    if (!account) return
+    loadResults().then(setResults).catch(() => toast.error('Could not load practice history.'))
+  }, [account])
+  useEffect(() => {
+    if (!account || puzzle.status === 'playing') return
+    saveResult({ id: puzzle.id, user_id: account.id, difficulty: puzzle.difficulty, won: puzzle.status === 'won', guesses: triesUsed, duration_ms: Math.max(0, Date.now() - puzzle.startedAt) })
+      .then(() => loadResults().then(setResults))
+      .catch(() => toast.error('Could not save this result.'))
+  }, [account, puzzle.id, puzzle.status, puzzle.difficulty, puzzle.startedAt, triesUsed])
 
-      <div className="ticks"></div>
+  function newPuzzle(difficulty: Difficulty = puzzle.difficulty) {
+    setPuzzle(createPuzzle(difficulty))
+    setSelected([])
+    setQuantOpen(false)
+    setSolutionOpen(false)
+  }
 
-      <section id="next-steps">
-        <div id="docs">
-          <svg className="icon" role="presentation" aria-hidden="true">
-            <use href="/icons.svg#documentation-icon"></use>
-          </svg>
-          <h2>Documentation</h2>
-          <p>Your questions, answered</p>
-          <ul>
-            <li>
-              <a href="https://vite.dev/" target="_blank">
-                <img className="logo" src={viteLogo} alt="" />
-                Explore Vite
-              </a>
-            </li>
-            <li>
-              <a href="https://react.dev/" target="_blank">
-                <img className="button-icon" src={reactLogo} alt="" />
-                Learn more
-              </a>
-            </li>
-          </ul>
-        </div>
-        <div id="social">
-          <svg className="icon" role="presentation" aria-hidden="true">
-            <use href="/icons.svg#social-icon"></use>
-          </svg>
-          <h2>Connect with us</h2>
-          <p>Join the Vite community</p>
-          <ul>
-            <li>
-              <a href="https://github.com/vitejs/vite" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#github-icon"></use>
-                </svg>
-                GitHub
-              </a>
-            </li>
-            <li>
-              <a href="https://chat.vite.dev/" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#discord-icon"></use>
-                </svg>
-                Discord
-              </a>
-            </li>
-            <li>
-              <a href="https://x.com/vite_js" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#x-icon"></use>
-                </svg>
-                X.com
-              </a>
-            </li>
-            <li>
-              <a href="https://bsky.app/profile/vite.dev" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#bluesky-icon"></use>
-                </svg>
-                Bluesky
-              </a>
-            </li>
-          </ul>
-        </div>
-      </section>
+  function selectCard(id: number) {
+    if (puzzle.status !== 'playing') return
+    setSelected(previous => previous.includes(id) ? previous.filter(value => value !== id) : previous.length < 2 ? [...previous, id] : [id])
+  }
 
-      <div className="ticks"></div>
-      <section id="spacer"></section>
-    </>
-  )
+  function play(operator: Operator) {
+    if (selected.length !== 2) { toast.message('Choose two cards first.'); return }
+    const result = combine(puzzle, selected[0], selected[1], operator)
+    if (result.error) { toast.message(result.error); return }
+    setPuzzle(result.puzzle)
+    setSelected([])
+  }
+
+  function bank() {
+    if (!puzzle.moves.length) return
+    setPuzzle(submitAttempt(puzzle))
+    setSelected([])
+  }
+
+  useEffect(() => {
+    function keydown(event: KeyboardEvent) {
+      if (authOpen || helpOpen || statsOpen || event.target instanceof HTMLInputElement || event.metaKey || event.ctrlKey || event.altKey) return
+      if (/^[1-6]$/.test(event.key)) { const card = puzzle.cards[Number(event.key) - 1]; if (card) selectCard(card.id) }
+      else if (event.key === '+' || event.key === '-') play(event.key as Operator)
+      else if (event.key === '*' || event.key.toLowerCase() === 'x') play('×')
+      else if (event.key === '/') { event.preventDefault(); play('÷') }
+      else if (event.key === 'Backspace') { setPuzzle(current => undo(current)); setSelected([]) }
+      else if (event.key === 'Escape') setSelected([])
+    }
+    window.addEventListener('keydown', keydown)
+    return () => window.removeEventListener('keydown', keydown)
+  })
+
+  async function signOut() { await supabase?.auth.signOut(); setAccount(null); setResults([]); setStatsOpen(false) }
+
+  return <div className="app"><header className="topbar"><div className="topbar-inner"><button className="wordmark" onClick={() => newPuzzle(3)}>deckle<span>.</span></button><div className="topbar-right"><button aria-label="How to play" onClick={() => setHelpOpen(true)}><CircleHelp size={20} /></button><button aria-label="Statistics" onClick={() => setStatsOpen(true)}><BarChart2 size={20} /></button><button className="account-link" onClick={() => account ? setStatsOpen(true) : setAuthOpen(true)}><UserRound size={18} /><span>{account ? account.name : 'Sign in'}</span></button></div></div></header>
+    <main className="main"><div className="mode-row"><span className="mode-label">PRACTICE</span><div className="mode-tabs" role="group" aria-label="Target size">{([3, 4, 5] as const).map(difficulty => <button key={difficulty} className={puzzle.difficulty === difficulty ? 'active' : ''} aria-pressed={puzzle.difficulty === difficulty} onClick={() => difficulty !== puzzle.difficulty && newPuzzle(difficulty)}>{difficulty} digit</button>)}</div></div>
+      <section className="puzzle-head"><p className="small-label">REACH THE TARGET</p><h1>{puzzle.target}</h1><div className="attempt-dots" aria-label={`${triesUsed} of ${puzzle.maxAttempts} attempts used`}>{Array.from({ length: puzzle.maxAttempts }, (_, i) => <span key={i} className={i < triesUsed ? puzzle.status === 'won' && i === triesUsed - 1 ? 'win' : 'used' : ''} />)}</div><p className="target-subtitle">Combine the cards using basic operations. Each card can be used once.</p></section>
+      <section className="board" aria-label="Arithmetic puzzle"><div className="board-top"><span>YOUR CARDS</span><button onClick={() => newPuzzle()}><Shuffle size={14} /> New deal</button></div><div className="cards" style={{ gridTemplateColumns: `repeat(${puzzle.cards.length}, minmax(0, 1fr))` }}>{puzzle.cards.map((card, index) => <motion.button key={card.id} className={`number-card ${selected.includes(card.id) ? 'selected' : ''} ${card.used.length > 1 ? 'derived' : ''}`} onClick={() => selectCard(card.id)} initial={{ y: 12, opacity: 0 }} animate={{ y: 0, opacity: 1 }} transition={{ delay: index * .035 }} whileTap={{ scale: .96 }} aria-pressed={selected.includes(card.id)} aria-label={`Card ${index + 1}: ${card.value}${selected.includes(card.id) ? ', selected' : ''}`}><span className="card-index">{index + 1}</span><strong>{card.value}</strong><span className="card-trace">{card.used.length > 1 ? `${card.used.length} cards` : '◆'}</span></motion.button>)}</div><div className="selection-line">{selected.length === 0 ? <span>Select two cards, then an operation</span> : <><span className="selected-value">{puzzle.cards.find(card => card.id === selected[0])?.value}</span><span className="selection-operator">{selected.length === 2 ? 'and' : 'then'}</span>{selected.length === 2 && <span className="selected-value">{puzzle.cards.find(card => card.id === selected[1])?.value}</span>}</>}</div><div className="operations" role="group" aria-label="Operations">{(['+', '-', '×', '÷'] as Operator[]).map(operator => <button key={operator} disabled={selected.length !== 2 || puzzle.status !== 'playing'} onClick={() => play(operator)} aria-label={`Use ${operator}`}>{operator}</button>)}</div><div className="board-actions"><button onClick={() => { setPuzzle(current => undo(current)); setSelected([]) }} disabled={!puzzle.moves.length || puzzle.status !== 'playing'}><ArrowLeft size={15} /> Undo</button><button onClick={() => { setPuzzle(current => resetAttempt(current)); setSelected([]) }} disabled={!puzzle.moves.length || puzzle.status !== 'playing'}><RotateCcw size={15} /> Reset</button><Button className="submit-button" onClick={bank} disabled={!puzzle.moves.length || puzzle.status !== 'playing'}>Bank {bestCard?.value ?? 'result'} <ArrowRight size={16} /></Button></div></section>
+      {puzzle.status !== 'playing' && <div className={`end-state ${puzzle.status}`}><div><strong>{puzzle.status === 'won' ? 'Exactly right.' : 'Out of attempts.'}</strong><p>{puzzle.status === 'won' ? `${puzzle.target} in ${triesUsed} ${triesUsed === 1 ? 'try' : 'tries'}. Nice work.` : `One solution: ${puzzle.solution}`}</p></div><Button onClick={() => newPuzzle()}>Play again <ArrowRight size={15} /></Button></div>}
+      {puzzle.moves.length > 0 && <div className="workings"><span className="small-label">YOUR WORK</span>{puzzle.cards.filter(card => card.used.length > 1).map(card => <p key={card.id}>{card.expression} = <b>{card.value}</b></p>)}</div>}
+      {puzzle.attempts.length > 0 && <div className="past-attempts"><span className="small-label">PAST TRIES</span>{puzzle.attempts.map((attempt, i) => <div key={i}><span>{String(i + 1).padStart(2, '0')}</span><strong>{attempt.value}</strong><span>{attempt.distance} away</span></div>)}</div>}
+      <div className="quant-section"><button className="quant-toggle" onClick={() => setQuantOpen(!quantOpen)}><Lightbulb size={17} /> Quant mode <span>{quantOpen ? '−' : '+'}</span></button>{quantOpen && <div className="quant-content"><div><strong>{puzzle.minimumCards}</strong><span>fewest cards needed</span></div><div><strong>{puzzle.reachableTargets.toLocaleString()}</strong><span>{puzzle.difficulty}-digit numbers reachable</span></div><p>Exhaustive search checks every card subset and every valid arithmetic tree. Division must be exact; intermediate values stay positive integers.</p><button className="solution-link" onClick={() => setSolutionOpen(!solutionOpen)}>{solutionOpen ? 'Hide' : 'Reveal'} one solution <ArrowRight size={14} /></button>{solutionOpen && <code>{puzzle.solution} = {puzzle.target}</code>}</div>}</div>
+      <p className="keyboard-note">Keyboard: number keys select cards · + − × ÷ combine · backspace undoes</p>
+    </main>
+    <Dialog open={helpOpen} onOpenChange={setHelpOpen}><DialogContent className="dialog-shell sm:max-w-[450px]"><DialogHeader><DialogTitle>How to play</DialogTitle><DialogDescription>Make the target from your hand.</DialogDescription></DialogHeader><div className="help-copy"><p><b>1.</b> Select two cards in order.</p><p><b>2.</b> Choose +, −, ×, or ÷. The result becomes a new card. You can use it again.</p><p><b>3.</b> Reach the target exactly to win. Bank your closest result to spend a try and reset the hand.</p><p>Each original card can appear once in a calculation. Division must be exact and every intermediate result must be a positive whole number.</p></div><Button className="dark-button" onClick={() => setHelpOpen(false)}>Got it <Check size={15} /></Button></DialogContent></Dialog>
+    <Dialog open={statsOpen} onOpenChange={setStatsOpen}><DialogContent className="dialog-shell sm:max-w-[430px]"><DialogHeader><DialogTitle>Practice stats</DialogTitle><DialogDescription>{account ? `Signed in as ${account.name}` : 'Sign in to save your practice.'}</DialogDescription></DialogHeader>{account ? <><div className="stats-numbers"><div><strong>{results.length}</strong><span>Played</span></div><div><strong>{wins}</strong><span>Solved</span></div><div><strong>{results.length ? Math.round(wins / results.length * 100) : 0}%</strong><span>Win rate</span></div></div><button className="switch-link" onClick={signOut}>Sign out</button></> : <Button className="dark-button" onClick={() => { setStatsOpen(false); setAuthOpen(true) }}><LockKeyhole size={15} /> Create an account</Button>}</DialogContent></Dialog>
+    <AuthDialog open={authOpen} onOpenChange={setAuthOpen} onAuthed={setAccount} />
+    <Toaster position="top-center" richColors />
+  </div>
 }
 
 export default App
