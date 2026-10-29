@@ -1,11 +1,13 @@
 export type Difficulty = 3 | 4 | 5
 export type Operator = '+' | '-' | '×' | '÷'
-export type NumberCard = { id: number; value: number; expression: string; used: number[] }
+export type Suit = 'S' | 'H' | 'D' | 'C'
+export type DeckCard = { code: string; rank: string; suit: Suit; value: number }
+export type NumberCard = { id: number; value: number; expression: string; used: number[]; deckCode?: string; rank?: string; suit?: Suit }
 export type Attempt = { value: number; expression: string; distance: number }
 export type Puzzle = {
   id: string
   difficulty: Difficulty
-  hand: number[]
+  hand: DeckCard[]
   target: number
   minimumCards: number
   reachableTargets: number
@@ -98,24 +100,35 @@ function shuffled<T>(items: T[]): T[] {
   return items
 }
 
-export function initialCards(hand: number[]): NumberCard[] {
-  return hand.map((value, id) => ({ id, value, expression: String(value), used: [id] }))
+export function makeDeck(): DeckCard[] {
+  const ranks = ['2', '3', '4', '5', '6', '7', '8', '9', '10', 'J', 'Q', 'K']
+  const suits: Suit[] = ['S', 'H', 'D', 'C']
+  return suits.flatMap(suit => ranks.map(rank => ({
+    code: `${suit}${rank.toLowerCase()}`,
+    rank, suit,
+    value: ['10', 'J', 'Q', 'K'].includes(rank) ? 10 : Number(rank),
+  })))
+}
+
+export function initialCards(hand: DeckCard[]): NumberCard[] {
+  return hand.map((card, id) => ({ id, value: card.value, expression: String(card.value), used: [id], deckCode: card.code, rank: card.rank, suit: card.suit }))
 }
 
 export function createPuzzle(difficulty: Difficulty): Puzzle {
   const level = levels[difficulty]
   const lower = 10 ** (difficulty - 1)
   const upper = 10 ** difficulty - 1
-  let chosen: { hand: number[]; target: number; reachable: Map<number, Reachable> } | undefined
+  let chosen: { hand: DeckCard[]; target: number; reachable: Map<number, Reachable> } | undefined
 
   // Each puzzle is checked against *all* legal arithmetic trees. A target is
   // accepted only if it needs the specified minimum number of cards.
   for (let deal = 0; deal < 18 && !chosen; deal++) {
-    const small = shuffled(Array.from({ length: 20 }, (_, i) => 1 + i % 10))
-    const large = shuffled([25, 50, 75, 100])
-    const largeCount = difficulty === 5 ? 2 : 1
-    const hand = shuffled([...small.slice(0, level.handSize - largeCount), ...large.slice(0, largeCount)])
-    const reachable = solveHand(hand)
+    const deck = makeDeck()
+    const tens = shuffled(deck.filter(card => card.value === 10))
+    const numbers = shuffled(deck.filter(card => card.value < 10))
+    const tenCount = difficulty === 3 ? 1 : difficulty === 4 ? 2 : 3
+    const hand = shuffled([...tens.slice(0, tenCount), ...numbers.slice(0, level.handSize - tenCount)])
+    const reachable = solveHand(hand.map(card => card.value))
     const targets = [...reachable].filter(([value, proof]) =>
       value >= lower && value <= upper && proof.minimumCards === level.minimumCards &&
       Boolean(proof.operators & (OP_PLUS | OP_MINUS)) && Boolean(proof.operators & (OP_TIMES | OP_DIVIDE)),

@@ -31,11 +31,14 @@ button:disabled{cursor:not-allowed}
 .board-top>span{font-size:10px;font-weight:800;letter-spacing:1.5px;color:#7f8a80}
 .board-top button{display:flex;gap:6px;align-items:center;color:#858f84;font-size:11px;font-weight:680;border:0;background:none;padding:3px}
 .board-top button:hover{color:#212d23}
-.cards{display:grid;gap:9px}
-.number-card{height:97px;position:relative;border:1.5px solid #d9ded8;border-radius:8px;background:#fff;color:#232a24;display:flex;align-items:center;justify-content:center;box-shadow:0 3px 0 #eff1ed;transition:border-color .15s,background .15s,transform .15s}
+.cards{display:flex;justify-content:center;gap:10px;min-height:110px}
+.number-card{width:min(12.2vw,78px);aspect-ratio:5/7;position:relative;border:1.5px solid #d9ded8;border-radius:6px;background:#fff;color:#232a24;display:flex;align-items:center;justify-content:center;box-shadow:0 3px 0 #eff1ed;transition:border-color .15s,background .15s,transform .15s;overflow:hidden;flex:none;padding:0}
 .number-card:hover{border-color:#8ba594;transform:translateY(-2px)}
 .number-card.selected{border:2px solid #2d4835;background:#f2f7f1;box-shadow:0 3px 0 #ccdacf}
 .number-card.derived{background:#f9faf8}
+.number-card.printed{border-color:#d5d9d4}
+.playing-art{display:block;width:100%;height:100%}
+.deck-note{text-align:center;color:#a9b2a8;font-size:10px;margin:13px 0 0}
 .number-card strong{font-size:32px;line-height:1;font-weight:740;letter-spacing:-1.3px;font-variant-numeric:tabular-nums}
 .card-index{position:absolute;left:8px;top:6px;font-size:9px;font-weight:750;color:#bdc4ba}
 .card-trace{position:absolute;right:8px;bottom:6px;font-size:9px;font-weight:700;color:#b1bcb0}
@@ -90,5 +93,5 @@ button:disabled{cursor:not-allowed}
 .stats-numbers{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin:14px 0}
 .stats-numbers>div{display:flex;flex-direction:column;border:1px solid #e8ece7;border-radius:7px;padding:11px}
 .stats-numbers strong{font-size:24px}.stats-numbers span{font-size:10px;color:#969f95}
-@media(max-width:560px){.topbar{height:58px}.topbar-inner{padding:0 17px}.wordmark{font-size:22px}.topbar-right{gap:12px}.topbar-right .account-link{padding-left:12px}.topbar-right .account-link span{display:none}.main{width:min(100% - 24px,640px);padding-top:21px}.mode-tabs button{padding:7px 10px}.puzzle-head{padding:34px 0 25px}.puzzle-head h1{font-size:68px}.target-subtitle{font-size:11px;padding:0 12px}.board{padding:17px 13px 14px}.cards{gap:6px}.number-card{height:83px}.number-card strong{font-size:25px}.card-index{left:6px;top:5px}.card-trace{right:5px;bottom:4px;font-size:8px}.board-actions{gap:12px}.board-actions>button:not(.submit-button){font-size:10px}.submit-button{font-size:10px!important;padding:0 9px!important}.keyboard-note{font-size:9px;line-height:1.5}}
-@media(max-width:370px){.number-card{height:75px}.number-card strong{font-size:21px}.board-actions{gap:8px}.submit-button{gap:4px!important}}
+@media(max-width:560px){.topbar{height:58px}.topbar-inner{padding:0 17px}.wordmark{font-size:22px}.topbar-right{gap:12px}.topbar-right .account-link{padding-left:12px}.topbar-right .account-link span{display:none}.main{width:min(100% - 24px,640px);padding-top:21px}.mode-tabs button{padding:7px 10px}.puzzle-head{padding:34px 0 25px}.puzzle-head h1{font-size:68px}.target-subtitle{font-size:11px;padding:0 12px}.board{padding:17px 13px 14px}.cards{gap:5px;min-height:78px}.number-card strong{font-size:25px}.card-index{left:6px;top:5px}.card-trace{right:5px;bottom:4px;font-size:8px}.board-actions{gap:12px}.board-actions>button:not(.submit-button){font-size:10px}.submit-button{font-size:10px!important;padding:0 9px!important}.keyboard-note{font-size:9px;line-height:1.5}}
+@media(max-width:370px){.number-card strong{font-size:21px}.board-actions{gap:8px}.submit-button{gap:4px!important}}
